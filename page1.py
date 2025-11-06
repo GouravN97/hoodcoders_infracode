@@ -9,10 +9,15 @@ def get_base64_image(image_path):
 
 def main():
     st.set_page_config(page_title="Project Dashboard", page_icon="🚀", layout="centered")
-    if st.session_state.get("page", None) == "second":
+    
+    # Check session state for page navigation
+    current_page = st.session_state.get("page", None)
+    
+    if current_page == "second":
         import page
         page.main()
     else:
+        # Landing page - show only if NOT going to page 2
         # Get base64 encoded image from project directory
         bg_image = get_base64_image("background.png")
         
@@ -22,54 +27,109 @@ def main():
         st.markdown(
             f"""
             <style>
+            @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700;800;900&display=swap');
+            
             .stApp {{
                 background-image: url("data:image/png;base64,{bg_image}");
                 background-size: cover;
                 background-position: center;
                 background-repeat: no-repeat;
                 background-attachment: fixed;
+                font-family: 'Poppins', sans-serif;
+            }}
+            
+            /* Hide default Streamlit elements */
+            #MainMenu {{visibility: hidden;}}
+            footer {{visibility: hidden;}}
+            header {{visibility: hidden;}}
+            
+            /* Center container with glass effect */
+            .main .block-container {{
+                background: rgba(255, 255, 255, 0.1);
+                backdrop-filter: blur(15px);
+                border-radius: 30px;
+                padding: 4rem 3rem;
+                box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+                border: 1px solid rgba(255, 255, 255, 0.2);
+                max-width: 800px;
+                margin: auto;
+                margin-top: 10vh;
             }}
             
             .main-heading {{
-                font-size: 2.8rem;
-                font-weight: 800;
-                letter-spacing: 2px;
+                font-size: 7rem;
+                font-weight: 900;
+                letter-spacing: 12px;
                 text-align: center;
-                margin-top: 80px;
-                margin-bottom: 30px;
+                margin-top: 20px;
+                margin-bottom: 60px;
                 color: #ffffff;
-                text-shadow: 0 4px 20px rgba(0, 0, 0, 0.8);
+                text-shadow: 0 6px 30px rgba(0, 0, 0, 0.9), 0 0 40px rgba(102, 200, 255, 0.5);
+                font-family: 'Copperplate', 'Copperplate Gothic Light', serif;
+                animation: glow 3s ease-in-out infinite;
             }}
             
-            .letsgo-btn {{
+            @keyframes glow {{
+                0%, 100% {{ 
+                    text-shadow: 0 6px 30px rgba(0, 0, 0, 0.9), 0 0 40px rgba(102, 200, 255, 0.5);
+                }}
+                50% {{ 
+                    text-shadow: 0 6px 30px rgba(0, 0, 0, 0.9), 0 0 60px rgba(102, 200, 255, 0.8);
+                }}
+            }}
+            
+            .subtitle {{
+                font-size: 1.8rem;
+                font-weight: 500;
+                text-align: center;
+                color: rgba(255, 255, 255, 0.95);
+                margin-bottom: 80px;
+                letter-spacing: 3px;
+                text-shadow: 0 2px 10px rgba(0, 0, 0, 0.7);
+            }}
+            
+            /* Button container and styling */
+            .stButton {{
                 display: flex;
                 justify-content: center;
-                margin-top: 60px;
+                margin-top: 50px;
             }}
             
-            .letsgo-btn button {{
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                color: white;
-                border: none;
-                border-radius: 12px;
-                padding: 14px 48px;
-                font-size: 1.1rem;
-                font-weight: 700;
-                letter-spacing: 1px;
-                cursor: pointer;
-                transition: all 0.3s ease;
-                box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+            .stButton > button {{
+                background: rgba(255, 255, 255, 0.15) !important;
+                color: white !important;
+                border: 2px solid rgba(255, 255, 255, 0.4) !important;
+                border-radius: 15px !important;
+                padding: 28px 0px !important;
+                font-size: 2.2rem !important;
+                font-weight: 900 !important;
+                letter-spacing: 6px !important;
+                cursor: pointer !important;
+                transition: all 0.3s ease !important;
+                box-shadow: 0 0 25px rgba(102, 200, 255, 0.8), 0 0 50px rgba(102, 200, 255, 0.5) !important;
+                text-transform: uppercase !important;
+                width: 100% !important;
+                min-height: 90px !important;
             }}
             
-            .letsgo-btn button:hover {{
-                transform: translateY(-4px) scale(1.05);
-                box-shadow: 0 8px 25px rgba(102, 126, 234, 0.7);
-                animation: pulse 1.5s infinite;
+            .stButton > button:hover {{
+                transform: translateY(-5px) scale(1.03) !important;
+                box-shadow: 0 0 35px rgba(102, 200, 255, 1), 0 0 70px rgba(102, 200, 255, 0.7) !important;
+                background: rgba(255, 255, 255, 0.2) !important;
+                border-color: rgba(255, 255, 255, 0.6) !important;
+            }}
+            
+            .stButton > button:active {{
+                transform: translateY(-2px) scale(1.01) !important;
             }}
             
             @keyframes pulse {{
-                0%, 100% {{ box-shadow: 0 8px 25px rgba(102, 126, 234, 0.7); }}
-                50% {{ box-shadow: 0 8px 35px rgba(102, 126, 234, 1); }}
+                0%, 100% {{ 
+                    box-shadow: 0 12px 40px rgba(102, 126, 234, 0.8);
+                }}
+                50% {{ 
+                    box-shadow: 0 12px 50px rgba(102, 126, 234, 1), 0 0 30px rgba(118, 75, 162, 0.8);
+                }}
             }}
             
             @keyframes zoomSpin {{
@@ -110,13 +170,12 @@ def main():
             st.rerun()
         else:
             st.markdown('<h1 class="main-heading">What If?</h1>', unsafe_allow_html=True)
+            st.markdown('<p class="subtitle">Explore Infrastructure Predictions</p>', unsafe_allow_html=True)
             
-            st.markdown('<div class="letsgo-btn">', unsafe_allow_html=True)
-            if st.button("Let's Go", key="letsgo"):
+            if st.button("Start Now", key="letsgo", use_container_width=True):
                 # Set animating state
                 st.session_state.animating = True
                 st.rerun()
-            st.markdown('</div>', unsafe_allow_html=True)
 
 if __name__ == "__main__":
     main()
