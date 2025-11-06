@@ -355,6 +355,71 @@ def main():
         .stJson {{
             display: none !important;
         }}
+        /* Results section styling */
+        .result-container {{
+            background: rgba(255, 255, 255, 0.12);
+            backdrop-filter: blur(12px);
+            border-radius: 20px;
+            padding: 2.5rem;
+            margin-top: 3rem;
+            border: 2px solid rgba(102, 200, 255, 0.3);
+            box-shadow: 0 0 30px rgba(102, 200, 255, 0.2);
+        }}
+        .result-heading {{
+            font-size: 2.5rem;
+            font-weight: 900;
+            color: #66C8FF;
+            text-align: center;
+            margin-bottom: 2rem;
+            font-family: 'Copperplate', serif;
+            letter-spacing: 2px;
+            text-shadow: 0 0 20px rgba(102, 200, 255, 0.6);
+        }}
+        .result-block {{
+            background: rgba(255, 255, 255, 0.08);
+            border-radius: 12px;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+            border-left: 4px solid #66C8FF;
+        }}
+        .result-field {{
+            display: block;
+            font-size: 1.3rem;
+            font-weight: 800;
+            color: rgba(255, 255, 255, 0.95);
+            font-family: 'Verdana', sans-serif;
+            margin-bottom: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }}
+        .result-value {{
+            display: block;
+            font-size: 2rem;
+            font-weight: 700;
+            color: #66C8FF;
+            font-family: 'Verdana', sans-serif;
+        }}
+        .result-list {{
+            list-style: none;
+            padding-left: 0;
+            margin-top: 1rem;
+        }}
+        .result-list li {{
+            background: rgba(255, 255, 255, 0.05);
+            padding: 0.8rem 1.2rem;
+            margin-bottom: 0.8rem;
+            border-radius: 8px;
+            font-size: 1.1rem;
+            color: rgba(255, 255, 255, 0.9);
+            border-left: 3px solid rgba(102, 200, 255, 0.6);
+        }}
+        .stImage {{
+            border-radius: 15px;
+            overflow: hidden;
+            margin-top: 2rem;
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.3);
+        }}
         /* Animation overlay for back button - zoom out bigger */
         .back-animation-overlay {{
             position: fixed;
@@ -406,6 +471,28 @@ def main():
         """,
         unsafe_allow_html=True
     )
+
+    # Show animation overlay when going back and return early
+    if is_going_back:
+        st.markdown(
+            f"""
+            <style>
+            /* Hide everything except animation overlay when going back */
+            .stApp > header,
+            .main .block-container {{
+                display: none !important;
+            }}
+            </style>
+            """,
+            unsafe_allow_html=True
+        )
+        st.markdown('<div class="back-animation-overlay"></div>', unsafe_allow_html=True)
+        import time
+        time.sleep(1.5)
+        st.session_state.page = None
+        st.session_state.going_back = False
+        st.rerun()
+        return
 
     # ===================== MODEL SELECTION =====================
     st.markdown("<h3 style='text-align:center;color:white;font-weight:700;'>Select Prediction Model</h3>", unsafe_allow_html=True)
@@ -570,7 +657,7 @@ def main():
             "Funding_Delay_%": funding_delay
         }
 
-        st.json(input_payload)
+        # Don't display raw JSON - hide it with CSS
 
         # Determine folder name
         folder = model_map.get(st.session_state.selected_model, "actual_cost_model")
@@ -601,7 +688,8 @@ def main():
 
         # ---- Display results robustly ----
         if result:
-            st.subheader("🔮 Prediction Result")
+            st.markdown('<div class="result-container">', unsafe_allow_html=True)
+            st.markdown('<h2 class="result-heading">🔮 Prediction Results</h2>', unsafe_allow_html=True)
 
             # Get prediction value
             pred_val = result.get("prediction", None)
@@ -612,7 +700,7 @@ def main():
             st.markdown(
                 f"""
                 <div class="result-block">
-                  <span class="result-field">Prediction</span>
+                  <span class="result-field">Predicted Value</span>
                   <span class="result-value">{display_value}</span>
                 </div>
                 """,
@@ -624,15 +712,16 @@ def main():
                 rating = result["rating"]
                 score = rating.get("score", "")
                 label = rating.get("label", "")
-                st.markdown(
-                    f"""
-                    <div class="result-block">
-                      <span class="result-field">Rating</span>
-                      <span class="result-value">{score} — {label}</span>
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
+                if score or label:
+                    st.markdown(
+                        f"""
+                        <div class="result-block">
+                          <span class="result-field">Rating</span>
+                          <span class="result-value">{score} — {label}</span>
+                        </div>
+                        """,
+                        unsafe_allow_html=True,
+                    )
 
                 # top drivers from rating (if present) — show as bullet list but styled
                 drivers = rating.get("drivers", [])
@@ -642,37 +731,40 @@ def main():
                         fname = d.get("feature", "unknown")
                         sval = d.get("shap_value", "")
                         inp = d.get("input_value", "")
-                        items_html += f"<li>{fname}: shap={sval}, input={inp}</li>"
+                        items_html += f"<li><strong>{fname}:</strong> SHAP={sval}, Input={inp}</li>"
                     st.markdown(
                         f"""
                         <div class="result-block">
-                          <span class="result-field">Top drivers</span>
-                          <span class="result-value"><ul class="result-list">{items_html}</ul></span>
+                          <span class="result-field">Top Drivers</span>
+                          <ul class="result-list">{items_html}</ul>
                         </div>
                         """,
                         unsafe_allow_html=True,
                     )
 
             # Analysis (if available)
-            if "analysis" in result:
+            if "analysis" in result and result["analysis"]:
                 analysis_text = result.get("analysis", "")
                 analysis_html = analysis_text.replace("\n", "<br/>")
 
                 st.markdown(
                     f"""
-                    <div style="margin-top:0.6rem;">
-                    <span class="result-field">Analysis</span>
-                    </div>
-                    <div style="margin-top:0.25rem; color: rgba(255,255,255,0.95); font-size:1.05rem; font-weight:600;">
-                    {analysis_html}
+                    <div class="result-block">
+                      <span class="result-field">Analysis</span>
+                      <div style="margin-top:1rem; color: rgba(255,255,255,0.95); font-size:1.15rem; font-weight:500; line-height: 1.6;">
+                      {analysis_html}
+                      </div>
                     </div>
                     """,
                     unsafe_allow_html=True,
                 )
+            
+            st.markdown('</div>', unsafe_allow_html=True)
 
             # Show plots if the files exist
             plots = result.get("plots", {}) if isinstance(result, dict) else {}
             if plots:
+                st.markdown('<div style="margin-top: 2rem;">', unsafe_allow_html=True)
                 # waterfall may be single path or keyed dict; handle both styles
                 wf_path = None
                 if isinstance(plots, dict):
@@ -681,17 +773,15 @@ def main():
                     wf_path = plots
 
                 if wf_path and os.path.exists(wf_path):
-                    st.image(wf_path, caption="SHAP Waterfall Plot")
-                else:
-                    st.info("Waterfall plot not available.")
+                    st.markdown('<h3 style="color: white; text-align: center; margin-bottom: 1rem; font-family: Verdana;">SHAP Waterfall Plot</h3>', unsafe_allow_html=True)
+                    st.image(wf_path, use_container_width=True)
 
                 summary_path = plots.get("summary") if isinstance(plots, dict) else None
                 if summary_path and os.path.exists(summary_path):
-                    st.image(summary_path, caption="SHAP Summary Plot")
-                else:
-                    st.info("Summary plot not available.")
-            else:
-                st.info("No plots were returned by the explanation layer.")
+                    st.markdown('<h3 style="color: white; text-align: center; margin-bottom: 1rem; margin-top: 2rem; font-family: Verdana;">SHAP Summary Plot</h3>', unsafe_allow_html=True)
+                    st.image(summary_path, use_container_width=True)
+                    
+                st.markdown('</div>', unsafe_allow_html=True)
 
 
 if __name__ == "__main__":
