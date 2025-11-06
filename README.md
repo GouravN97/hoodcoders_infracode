@@ -115,7 +115,7 @@ python api.py
 ### Run UI
 
 ```bash
-streamlit run ui_streamlit.py
+streamlit run app.py
 ```
 
 -----
