@@ -9,7 +9,7 @@
 > ⚙️ An **AI-powered infrastructure prediction & risk insight system** built for
 > **Aurigo Infracode Synergy ’25** — using **Streamlit + FastAPI + XGBoost + SHAP**
 
-> **Demo Link** - https://drive.google.com/drive/folders/1gIJlo1aDOwLvOS-o-tCSSFPcTpCpGwrG?usp=sharing
+> **Demo Link and Slide Deck** - https://drive.google.com/drive/folders/1gIJlo1aDOwLvOS-o-tCSSFPcTpCpGwrG?usp=sharing
 -----
 
 ## 🌍 Overview
