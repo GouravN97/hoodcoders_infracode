@@ -191,12 +191,6 @@ MIT — free to use & modify
 
 -----
 
-## 💬 Contact
-
-  * 📧 **Email** — hoodcoders.ai@gmail.com
-  * 🧠 **Discord/Community link** — coming soon
-  * 🌐 **Website** — coming soon
-
 -----
 
 ⭐ If you like this project, drop a star on GitHub\!
