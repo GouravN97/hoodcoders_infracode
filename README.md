@@ -1,4 +1,4 @@
-# hoodcoders_infracode
+# hoodcoders - Official submission for Aurigo Infracode Synergy '25
 
 **1.** pip install -r requirements.txt
 
