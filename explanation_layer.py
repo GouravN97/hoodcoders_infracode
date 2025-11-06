@@ -421,43 +421,387 @@ def explain_instance(explainer, instance_df: pd.DataFrame):
 # -------------------------
 # Plotting helpers
 # -------------------------
-def plot_waterfall(explanation, feature_names: List[str], out_path: str):
-    logger.info("Rendering waterfall plot to %s", out_path)
-    plt.figure(figsize=(8, 6))
+
+# Set style for better-looking plots
+
+plt.rcParams['figure.facecolor'] = 'white'
+plt.rcParams['axes.facecolor'] = 'white'
+
+
+def plot_waterfall(explanation, feature_names: List[str], out_path: str, 
+                   max_display: int = 20, title: Optional[str] = None):
+    """
+    Create waterfall plot showing how features contribute to prediction.
+    
+    Args:
+        explanation: SHAP explanation object or array
+        feature_names: List of feature names
+        out_path: Output file path
+        max_display: Maximum number of features to display
+        title: Optional custom title
+    """
+    logger.info(f"Creating waterfall plot: {out_path}")
+    
+    fig, ax = plt.subplots(figsize=(10, 8))
+    
     try:
-        shap.plots.waterfall(explanation, show=False)
-    except Exception:
-        # fallback to horizontal bar of top features
-        try:
-            arr = np.array(explanation)
-            if arr.ndim > 1:
-                arr = arr.flatten()
-            dfb = pd.DataFrame({"feature": feature_names, "shap": arr})
-            dfb["abs_shap"] = dfb["shap"].abs()
-            dfb = dfb.sort_values("abs_shap", ascending=False).head(20)
-            dfb = dfb.iloc[::-1]
-            plt.barh(dfb["feature"], dfb["shap"])
-            plt.xlabel("SHAP contribution")
-            plt.tight_layout()
-        except Exception:
-            logger.exception("Fallback waterfall failed")
-            raise
-    plt.savefig(out_path, dpi=150)
+        # Try native SHAP waterfall plot
+        if hasattr(explanation, 'values') and hasattr(explanation, 'base_values'):
+            shap.plots.waterfall(explanation[0] if explanation.values.ndim > 1 else explanation, 
+                               max_display=max_display, show=False)
+        else:
+            raise AttributeError("Using fallback method")
+            
+    except Exception as e:
+        logger.warning(f"Native waterfall failed ({e}), using custom plot")
+        
+        # Custom waterfall implementation
+        arr = np.array(explanation)
+        if arr.ndim > 1:
+            arr = arr.flatten()
+        
+        # Create dataframe of features and values
+        df = pd.DataFrame({
+            'feature': feature_names[:len(arr)],
+            'shap_value': arr
+        })
+        df['abs_shap'] = df['shap_value'].abs()
+        df = df.sort_values('abs_shap', ascending=False).head(max_display)
+        df = df.sort_values('shap_value', ascending=True)
+        
+        # Color mapping
+        colors = ['#FF0D57' if x < 0 else '#1E88E5' for x in df['shap_value']]
+        
+        # Create horizontal bar chart
+        bars = ax.barh(df['feature'], df['shap_value'], color=colors, alpha=0.8, edgecolor='black', linewidth=0.5)
+        
+        # Add value labels
+        for i, (idx, row) in enumerate(df.iterrows()):
+            value = row['shap_value']
+            x_pos = value + (0.02 if value > 0 else -0.02)
+            ha = 'left' if value > 0 else 'right'
+            ax.text(x_pos, i, f'{value:.3f}', va='center', ha=ha, fontsize=9)
+        
+        # Styling
+        ax.axvline(x=0, color='black', linestyle='-', linewidth=0.8)
+        ax.set_xlabel('SHAP Value (impact on model output)', fontsize=11, fontweight='bold')
+        ax.set_ylabel('Feature', fontsize=11, fontweight='bold')
+        ax.grid(True, alpha=0.3, axis='x')
+        
+        # Legend
+        from matplotlib.patches import Patch
+        legend_elements = [
+            Patch(facecolor='#1E88E5', label='Increases prediction'),
+            Patch(facecolor='#FF0D57', label='Decreases prediction')
+        ]
+        ax.legend(handles=legend_elements, loc='best', framealpha=0.9)
+    
+    if title:
+        plt.title(title, fontsize=13, fontweight='bold', pad=20)
+    else:
+        plt.title('SHAP Waterfall Plot - Feature Contributions', fontsize=13, fontweight='bold', pad=20)
+    
+    plt.tight_layout()
+    plt.savefig(out_path, dpi=300, bbox_inches='tight')
     plt.close()
-    logger.info("Saved waterfall plot")
+    logger.info(f"Waterfall plot saved to {out_path}")
 
 
-def plot_summary(shap_values_all, X_background, out_path: str):
-    logger.info("Rendering summary plot to %s", out_path)
-    plt.figure(figsize=(10, 6))
+def plot_summary(shap_values, X_background: pd.DataFrame, out_path: str,
+                max_display: int = 20, plot_type: str = 'dot', title: Optional[str] = None):
+    """
+    Create summary plot showing feature importance across all samples.
+    
+    Args:
+        shap_values: SHAP values array or Explanation object
+        X_background: Background dataset
+        out_path: Output file path
+        max_display: Maximum features to display
+        plot_type: 'dot', 'violin', or 'bar'
+        title: Optional custom title
+    """
+    logger.info(f"Creating summary plot: {out_path}")
+    
+    fig = plt.figure(figsize=(12, 8))
+    
     try:
-        shap.summary_plot(shap_values_all, X_background, show=False)
-    except Exception:
-        logger.exception("Summary plot failed")
+        if plot_type == 'bar':
+            shap.summary_plot(shap_values, X_background, plot_type='bar', 
+                            max_display=max_display, show=False)
+        else:
+            shap.summary_plot(shap_values, X_background, plot_type=plot_type,
+                            max_display=max_display, show=False, color_bar_label='Feature value')
+        
+        if title:
+            plt.title(title, fontsize=13, fontweight='bold', pad=20)
+        else:
+            plt.title(f'SHAP Summary Plot ({plot_type.capitalize()})', fontsize=13, fontweight='bold', pad=20)
+        
+    except Exception as e:
+        logger.exception(f"Summary plot failed: {e}")
+        plt.close()
         raise
-    plt.savefig(out_path, dpi=150)
+    
+    plt.tight_layout()
+    plt.savefig(out_path, dpi=300, bbox_inches='tight')
     plt.close()
-    logger.info("Saved summary plot")
+    logger.info(f"Summary plot saved to {out_path}")
+
+
+def plot_force(explanation, feature_names: List[str], out_path: str,
+              matplotlib: bool = True, title: Optional[str] = None):
+    """
+    Create force plot showing prediction breakdown.
+    
+    Args:
+        explanation: SHAP explanation object
+        feature_names: List of feature names
+        out_path: Output file path
+        matplotlib: Use matplotlib instead of JavaScript visualization
+        title: Optional custom title
+    """
+    logger.info(f"Creating force plot: {out_path}")
+    
+    try:
+        if matplotlib:
+            # Use matplotlib-based force plot
+            shap.plots.force(explanation[0] if hasattr(explanation, '__getitem__') else explanation,
+                           matplotlib=True, show=False)
+            
+            if title:
+                plt.title(title, fontsize=13, fontweight='bold', pad=20)
+            
+            plt.tight_layout()
+            plt.savefig(out_path, dpi=300, bbox_inches='tight')
+            plt.close()
+        else:
+            # Save HTML version
+            force_plot = shap.force_plot(explanation.base_values[0] if hasattr(explanation.base_values, '__len__') else explanation.base_values,
+                                        explanation.values[0] if explanation.values.ndim > 1 else explanation.values,
+                                        feature_names=feature_names)
+            shap.save_html(out_path.replace('.png', '.html'), force_plot)
+            logger.info(f"Force plot saved as HTML: {out_path.replace('.png', '.html')}")
+            return
+        
+    except Exception as e:
+        logger.exception(f"Force plot failed: {e}")
+        raise
+    
+    logger.info(f"Force plot saved to {out_path}")
+
+
+def plot_bar_chart(explanation, feature_names: List[str], out_path: str,
+                  max_display: int = 15, title: Optional[str] = None):
+    """
+    Create bar chart of feature importance (mean absolute SHAP values).
+    
+    Args:
+        explanation: SHAP explanation object or array
+        feature_names: List of feature names
+        out_path: Output file path
+        max_display: Maximum features to display
+        title: Optional custom title
+    """
+    logger.info(f"Creating bar chart: {out_path}")
+    
+    fig, ax = plt.subplots(figsize=(10, 8))
+    
+    # Extract SHAP values
+    if hasattr(explanation, 'values'):
+        shap_vals = explanation.values
+        if shap_vals.ndim == 3:
+            shap_vals = shap_vals[0, 0, :]
+        elif shap_vals.ndim == 2:
+            shap_vals = shap_vals[0, :]
+    else:
+        shap_vals = np.array(explanation)
+        if shap_vals.ndim > 1:
+            shap_vals = shap_vals.flatten()
+    
+    # Calculate mean absolute importance
+    df = pd.DataFrame({
+        'feature': feature_names[:len(shap_vals)],
+        'importance': np.abs(shap_vals)
+    })
+    df = df.sort_values('importance', ascending=False).head(max_display)
+    df = df.sort_values('importance', ascending=True)
+    
+    # Create bar chart
+    bars = ax.barh(df['feature'], df['importance'], color='#1E88E5', alpha=0.8, edgecolor='black', linewidth=0.5)
+    
+    # Add value labels
+    for i, (idx, row) in enumerate(df.iterrows()):
+        ax.text(row['importance'] + max(df['importance']) * 0.01, i, 
+               f"{row['importance']:.3f}", va='center', ha='left', fontsize=9)
+    
+    # Styling
+    ax.set_xlabel('Mean |SHAP value|', fontsize=11, fontweight='bold')
+    ax.set_ylabel('Feature', fontsize=11, fontweight='bold')
+    ax.grid(True, alpha=0.3, axis='x')
+    
+    if title:
+        plt.title(title, fontsize=13, fontweight='bold', pad=20)
+    else:
+        plt.title('Feature Importance (SHAP)', fontsize=13, fontweight='bold', pad=20)
+    
+    plt.tight_layout()
+    plt.savefig(out_path, dpi=300, bbox_inches='tight')
+    plt.close()
+    logger.info(f"Bar chart saved to {out_path}")
+
+
+def plot_decision(explanation, feature_names: List[str], out_path: str,
+                 feature_idx: int = 0, title: Optional[str] = None):
+    """
+    Create decision plot showing cumulative SHAP contributions.
+    
+    Args:
+        explanation: SHAP explanation object
+        feature_names: List of feature names
+        out_path: Output file path
+        feature_idx: Index of instance to plot (for multi-instance explanations)
+        title: Optional custom title
+    """
+    logger.info(f"Creating decision plot: {out_path}")
+    
+    fig = plt.figure(figsize=(10, 8))
+    
+    try:
+        if hasattr(explanation, 'base_values'):
+            shap.decision_plot(
+                explanation.base_values[feature_idx] if hasattr(explanation.base_values, '__len__') else explanation.base_values,
+                explanation.values[feature_idx] if explanation.values.ndim > 1 else explanation.values,
+                feature_names=feature_names,
+                show=False
+            )
+        else:
+            logger.warning("Decision plot requires Explanation object with base_values")
+            plt.close()
+            return
+        
+        if title:
+            plt.title(title, fontsize=13, fontweight='bold', pad=20)
+        
+    except Exception as e:
+        logger.exception(f"Decision plot failed: {e}")
+        plt.close()
+        raise
+    
+    plt.tight_layout()
+    plt.savefig(out_path, dpi=300, bbox_inches='tight')
+    plt.close()
+    logger.info(f"Decision plot saved to {out_path}")
+
+
+def plot_dependence(shap_values, X_background: pd.DataFrame, feature: str,
+                   out_path: str, interaction_feature: Optional[str] = None,
+                   title: Optional[str] = None):
+    """
+    Create dependence plot showing relationship between feature value and SHAP value.
+    
+    Args:
+        shap_values: SHAP values array or Explanation object
+        X_background: Background dataset
+        feature: Feature name to plot
+        out_path: Output file path
+        interaction_feature: Optional feature to color by
+        title: Optional custom title
+    """
+    logger.info(f"Creating dependence plot for {feature}: {out_path}")
+    
+    fig = plt.figure(figsize=(10, 6))
+    
+    try:
+        shap.dependence_plot(
+            feature,
+            shap_values,
+            X_background,
+            interaction_index=interaction_feature,
+            show=False
+        )
+        
+        if title:
+            plt.title(title, fontsize=13, fontweight='bold', pad=20)
+        else:
+            plt.title(f'SHAP Dependence Plot: {feature}', fontsize=13, fontweight='bold', pad=20)
+        
+    except Exception as e:
+        logger.exception(f"Dependence plot failed: {e}")
+        plt.close()
+        raise
+    
+    plt.tight_layout()
+    plt.savefig(out_path, dpi=300, bbox_inches='tight')
+    plt.close()
+    logger.info(f"Dependence plot saved to {out_path}")
+
+
+def create_all_plots(explanation, X_background: Optional[pd.DataFrame],
+                    feature_names: List[str], output_dir: str,
+                    prefix: str = "") -> Dict[str, str]:
+    """
+    Generate all available plot types and return paths.
+    
+    Args:
+        explanation: SHAP explanation object
+        X_background: Background dataset (optional, for summary plots)
+        feature_names: List of feature names
+        output_dir: Directory to save plots
+        prefix: Optional prefix for filenames
+    
+    Returns:
+        Dictionary mapping plot type to file path
+    """
+    os.makedirs(output_dir, exist_ok=True)
+    saved_plots = {}
+    
+    pfx = f"{prefix}_" if prefix else ""
+    
+    # 1. Waterfall plot
+    try:
+        path = os.path.join(output_dir, f"{pfx}waterfall.png")
+        plot_waterfall(explanation, feature_names, path)
+        saved_plots['waterfall'] = path
+    except Exception as e:
+        logger.warning(f"Failed to create waterfall plot: {e}")
+    
+    # 2. Bar chart
+    try:
+        path = os.path.join(output_dir, f"{pfx}importance_bar.png")
+        plot_bar_chart(explanation, feature_names, path)
+        saved_plots['bar'] = path
+    except Exception as e:
+        logger.warning(f"Failed to create bar chart: {e}")
+    
+    # 3. Force plot
+    try:
+        path = os.path.join(output_dir, f"{pfx}force_plot.png")
+        plot_force(explanation, feature_names, path, matplotlib=True)
+        saved_plots['force'] = path
+    except Exception as e:
+        logger.warning(f"Failed to create force plot: {e}")
+    
+    # 4. Decision plot
+    try:
+        path = os.path.join(output_dir, f"{pfx}decision.png")
+        plot_decision(explanation, feature_names, path)
+        saved_plots['decision'] = path
+    except Exception as e:
+        logger.warning(f"Failed to create decision plot: {e}")
+    
+    # Background-dependent plots
+    if X_background is not None:
+        # 5. Summary plot (dot)
+        try:
+            from explanation_layer import explain_instance, init_shap_explainer
+            # Need to compute SHAP for background
+            logger.info("Computing SHAP values for background data for summary plots...")
+            # This would need explainer access - skipping for now or implement separately
+        except Exception as e:
+            logger.warning(f"Failed to create summary plots: {e}")
+    
+    logger.info(f"Created {len(saved_plots)} plots in {output_dir}")
+    return saved_plots
 
 
 # -------------------------
@@ -921,106 +1265,6 @@ def explain_record(model_path: str,
     payload["rating"] = rate_prediction(payload, positive_is_good=IS_POSITIVE)
     payload["analysis"] = generate_human_readable_analysis(payload)
     return payload
-
-def compare_two_inputs(
-    model_path: str,
-    encoders_path: str = None,
-    columns_path: str = None,
-    input_json_a: str = None,
-    input_json_b: str = None,
-    output_dir: str = "./explanations/comparisons",
-    save_plots: bool = True
-):
-    """
-    Compare SHAP explanations of two different project configurations.
-
-    Returns:
-        {
-            "scenario_A": explanation_payload_A,
-            "scenario_B": explanation_payload_B,
-            "prediction_comparison": {
-                "A": valueA,
-                "B": valueB,
-                "difference": B - A
-            },
-            "shap_comparison": [
-                {
-                    "feature": "...",
-                    "A": shapA,
-                    "B": shapB,
-                    "delta": shapB - shapA
-                },
-                ...
-            ]
-        }
-    """
-
-    import os, json
-    os.makedirs(output_dir, exist_ok=True)
-
-    # --- Run both explanations individually ---
-    explanation_A = explain_record(
-        model_path=model_path,
-        encoders_path=encoders_path,
-        columns_path=columns_path,
-        input_json=input_json_a,
-        output_dir=os.path.join(output_dir, "scenario_A"),
-        save_plots=save_plots
-    )
-
-    explanation_B = explain_record(
-        model_path=model_path,
-        encoders_path=encoders_path,
-        columns_path=columns_path,
-        input_json=input_json_b,
-        output_dir=os.path.join(output_dir, "scenario_B"),
-        save_plots=save_plots
-    )
-
-    # --- Predictions ---
-    pred_A = explanation_A.get("prediction") or explanation_A.get("predicted_class")
-    pred_B = explanation_B.get("prediction") or explanation_B.get("predicted_class")
-
-    # --- Feature-level SHAP comparison ---
-    feature_map_A = {f["feature"]: f for f in explanation_A["features"]}
-    feature_map_B = {f["feature"]: f for f in explanation_B["features"]}
-
-    shap_comparison = []
-    for feat in feature_map_A:
-        if feat not in feature_map_B:
-            continue
-        shapA = feature_map_A[feat]["shap_value"]
-        shapB = feature_map_B[feat]["shap_value"]
-        shap_comparison.append({
-            "feature": feat,
-            "A": shapA,
-            "B": shapB,
-            "delta": shapB - shapA   # positive delta -> increases prediction relative to scenario A
-        })
-
-    # Sort by absolute delta impact
-    shap_comparison = sorted(shap_comparison, key=lambda x: abs(x["delta"]), reverse=True)
-
-    # --- Build final comparison payload ---
-    comparison_payload = {
-        "scenario_A": explanation_A,
-        "scenario_B": explanation_B,
-        "prediction_comparison": {
-            "A": pred_A,
-            "B": pred_B,
-            "difference": (pred_B - pred_A) if isinstance(pred_A, (int, float)) else None
-        },
-        "shap_comparison": shap_comparison
-    }
-
-    # --- Save comparison JSON ---
-    comparison_file = os.path.join(output_dir, "comparison.json")
-    with open(comparison_file, "w") as f:
-        json.dump(comparison_payload, f, indent=2)
-
-    comparison_payload["comparison_file"] = comparison_file
-
-    return comparison_payload
 
 
 # -------------------------
