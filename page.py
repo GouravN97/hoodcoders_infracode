@@ -55,11 +55,19 @@ def main():
             padding: 10px 20px;
             font-weight: 600;
             transition: all 0.3s ease;
+            font-size: 1rem;
         }}
         .stButton > button:hover {{
             background: rgba(255, 255, 255, 0.3);
             border-color: rgba(255, 255, 255, 0.5);
             transform: translateY(-2px);
+        }}
+        /* Primary button (selected) styling - subtle neon highlight */
+        div[data-testid="stButton"] button[kind="primary"] {{
+            background: rgba(255, 255, 255, 0.15) !important;
+            border: 2px solid rgba(255, 255, 255, 0.4) !important;
+            box-shadow: 0 0 20px rgba(102, 200, 255, 0.8), 0 0 40px rgba(102, 200, 255, 0.4) !important;
+            font-weight: 700 !important;
         }}
         /* Help icon visibility */
         .stTooltipIcon {{
@@ -67,10 +75,37 @@ def main():
             opacity: 1 !important;
             visibility: visible !important;
         }}
-        /* Form labels */
+        /* Form labels - bigger and bolder */
         label {{
             color: white !important;
+            font-weight: 800 !important;
+            font-size: 1.3rem !important;
+            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+        }}
+        /* Input fields - much larger */
+        .stSelectbox > div > div, .stNumberInput > div > div > input {{
+            font-size: 1.3rem !important;
+            padding: 0.75rem !important;
             font-weight: 600 !important;
+        }}
+        input, select, textarea {{
+            font-size: 1.3rem !important;
+            padding: 0.75rem !important;
+            font-weight: 600 !important;
+        }}
+        /* Slider text */
+        .stSlider p {{
+            font-size: 1.3rem !important;
+            font-weight: 800 !important;
+        }}
+        /* Section headings */
+        h3 {{
+            font-size: 2rem !important;
+            font-weight: 900 !important;
+        }}
+        /* Hide JSON output */
+        .stJson {{
+            display: none !important;
         }}
         </style>
         <div class="form-heading">Project Prediction</div>
@@ -119,8 +154,8 @@ def main():
                               help="Select the primary sector for this project")
         region = st.selectbox("Region", ["Central","West","South","East","North"],
                               help="Geographic region where the project is located")
-        owner_agency = st.multiselect("Owner Agency", ["Municipal","State","Central"],
-                                      help="Select one or more agencies responsible for the project")
+        owner_agency = st.selectbox("Owner Agency", ["Municipal","State","Central"],
+                                     help="Agency responsible for the project")
 
         start_year = st.number_input("Start Year (YYYY)", min_value=1900, max_value=2100,
                                      help="Year when the project is expected to begin")
@@ -160,7 +195,7 @@ def main():
         input_payload = {
             "Sector": sector,
             "Region": region,
-            "Owner_Agency": owner_agency[0] if owner_agency else "Unknown",
+            "Owner_Agency": owner_agency if owner_agency else "Unknown",
             "Start_Year": start_year,
             "End_Year": end_year,
             "Planned_Budget": planned_budget,
@@ -175,7 +210,7 @@ def main():
             "Funding_Delay_%": funding_delay
         }
 
-        st.json(input_payload)
+        # JSON output hidden by CSS
 
         # Determine folder name
         folder = model_map[st.session_state.selected_model]
