@@ -1,17 +1,5 @@
 #!/usr/bin/env python3
-"""
-explanation_layer.py
 
-Unified explanation layer that supports XGBoost JSON models (regressor/classifier) and joblib pickles.
-It loads encoders and expected model columns when given, computes derived features exactly like training,
-applies encodings, aligns columns, runs model.predict / predict_proba, and produces SHAP explanations.
-
-Usage (example):
-  python explanation_layer.py --model models/actual_cost_model/actual_cost_model.json \
-      --encoders models/actual_cost_model/encoders.pkl \
-      --columns models/actual_cost_model/model_columns.pkl \
-      --input-json '{"Sector":"Energy","Region":"South", "Start_Year":2025, "End_Year":2029, "Planned_Budget":10000000, "Funding_Approved":10000000, "Funding_Received":8000000, "Inflation_Rate":0.05, "Inflation_Index":1.05, "Feasibility_Score":80, "Sustainability_Score":75, "Public_Benefit_Score":70, "Stakeholder_Priority":1, "Funding_Delay_%":5.0}'
-"""
 
 from __future__ import annotations
 import os
@@ -270,6 +258,126 @@ def transform_for_model(df: pd.DataFrame,
 
     return df, feature_names
 
+import os
+import json
+import time
+import tempfile
+from typing import Dict, Any, List, Optional
+
+# ---------- Scenario persistence helpers (add these into explanation_layer.py) ----------
+
+def _ensure_dir(dirpath: str) -> None:
+    """Ensure directory exists."""
+    os.makedirs(dirpath, exist_ok=True)
+
+
+def _scenario_filename(name: Optional[str]) -> str:
+    """Create a safe filename from name; fall back to timestamp when name None/empty."""
+    if name and str(name).strip():
+        safe = str(name).strip().replace(" ", "_")
+        # remove potentially problematic characters
+        safe = "".join(c for c in safe if c.isalnum() or c in ("-", "_"))
+        return f"{safe}.json"
+    # fallback: timestamp
+    ts = int(time.time())
+    return f"scenario_{ts}.json"
+
+
+def save_scenario(name: Optional[str],
+                  input_dict: Dict[str, Any],
+                  dirpath: str = "./scenarios",
+                  overwrite: bool = False) -> str:
+    """
+    Save a scenario (input dict) as JSON on disk.
+
+    Args:
+      name: human-friendly name -> filename (if None a timestamped filename is used).
+      input_dict: the scenario dictionary to save (should be JSON-serializable).
+      dirpath: folder to store scenarios.
+      overwrite: if True and a file with the same name exists, overwrite it.
+
+    Returns:
+      The full path to the saved scenario file.
+
+    Raises:
+      FileExistsError if file exists and overwrite is False.
+    """
+    _ensure_dir(dirpath)
+    fname = _scenario_filename(name)
+    path = os.path.join(dirpath, fname)
+
+    if os.path.exists(path) and not overwrite:
+        raise FileExistsError(f"Scenario file already exists: {path} (pass overwrite=True to replace)")
+
+    # atomic write: write to temp file then replace
+    fd, tmp = tempfile.mkstemp(dir=dirpath, prefix=".tmp_", suffix=".json")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(input_dict, f, indent=2, ensure_ascii=False)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)  # atomic on most OSes
+    finally:
+        # make sure temp file removed if something went wrong
+        if os.path.exists(tmp):
+            try:
+                os.remove(tmp)
+            except Exception:
+                pass
+
+    return path
+
+
+def load_scenario(name: str, dirpath: str = "./scenarios") -> Dict[str, Any]:
+    """
+    Load a saved scenario by name (filename without .json allowed).
+
+    Args:
+      name: scenario filename or basename (with or without .json).
+      dirpath: folder where scenarios are stored.
+
+    Returns:
+      The loaded dict.
+
+    Raises:
+      FileNotFoundError if scenario not found.
+      JSONDecodeError if file exists but isn't valid JSON.
+    """
+    if not name:
+        raise ValueError("name must be provided to load a scenario.")
+    if not name.lower().endswith(".json"):
+        name = f"{name}.json"
+    path = os.path.join(dirpath, name)
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"Scenario file not found: {path}")
+    with open(path, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def list_scenarios(dirpath: str = "./scenarios") -> List[str]:
+    """
+    Return a sorted list of scenario filenames (basename only) found in dirpath.
+    """
+    if not os.path.isdir(dirpath):
+        return []
+    items = [fn for fn in os.listdir(dirpath) if fn.lower().endswith(".json")]
+    items.sort()
+    return items
+
+
+def delete_scenario(name: str, dirpath: str = "./scenarios") -> bool:
+    """
+    Delete a saved scenario. Returns True if deleted, False if file not found.
+    """
+    if not name:
+        return False
+    if not name.lower().endswith(".json"):
+        name = f"{name}.json"
+    path = os.path.join(dirpath, name)
+    if os.path.exists(path):
+        os.remove(path)
+        return True
+    return False
 
 # -------------------------
 # SHAP helpers
@@ -417,9 +525,237 @@ def explanation_to_dict(explanation, feature_names: List[str], model_prediction:
         return result
 
 
+
 # -------------------------
 # High level API
 # -------------------------
+
+# ---------------------------------------------------------
+# OUTPUT RATING (1–5 scale) BASED ON MODEL OUTPUT & SHAP
+# ---------------------------------------------------------
+
+def rate_prediction(payload: dict,
+                    positive_is_good: bool = False,
+                    shap_threshold: float = 0.15,
+                    outlier_factor: float = 4.0) -> dict:
+    """
+    Create a 1–5 rating for the prediction based on:
+      ✅ predicted value or class
+      ✅ magnitude of SHAP contributions (stability)
+      ✅ concentration of risk signals (how many large SHAP drivers)
+    
+    Arguments:
+      positive_is_good:
+         - If True → higher prediction = better (ex: ROI)
+         - If False → higher prediction = worse (ex: cost overruns, delay)
+      
+      shap_threshold:
+         - Determines what counts as a "high" impact feature
+         - Relative to sum(|shap|); not absolute scale.
+    
+    Returns a dict:
+      {
+        "score": float(1–5),
+        "label": "Excellent / Good / Fair / Poor / Critical",
+        "drivers": [...top features...],
+        "reason": "text explanation"
+      }
+    """
+
+    feats = payload.get("features", [])
+    if not feats:
+        return {"score": 3, "label": "Unknown", "reason": "No SHAP info", "drivers": []}
+    
+    # Extract prediction
+    pred = payload.get("prediction")
+    pred_class = payload.get("predicted_class")
+
+    # 1) Compute contribution magnitudes
+    try:
+        shap_vals = [abs(float(f.get("shap_value", 0))) for f in feats]
+    except Exception:
+        shap_vals = [0]
+
+    total_shap = sum(shap_vals) + 1e-9  # avoid div by zero
+    max_shap = max(shap_vals)
+
+    # 2) Count risk heavy drivers
+    high_impact = sum(1 for s in shap_vals if s / total_shap > shap_threshold)
+
+    # 3A) Pure risk score from SHAP distribution
+    #     Many dominant features -> unstable / risky
+    if high_impact == 0:
+        stability_score = 5
+    elif high_impact == 1:
+        stability_score = 4
+    elif high_impact == 2:
+        stability_score = 3
+    elif high_impact == 3:
+        stability_score = 2
+    else:
+        stability_score = 1
+
+    # 3B) Outcome score (optional) depending on metric semantics
+    #     - If higher = worse → invert scale
+    #     - If higher = better → use directly
+    if pred is not None:
+        # Normalize relative to SHAP magnitude
+        norm_pred = abs(float(pred)) / (max_shap * outlier_factor + 1e-6)
+
+        if positive_is_good:
+            if norm_pred > 1.2: outcome_score = 5
+            elif norm_pred > 0.8: outcome_score = 4
+            elif norm_pred > 0.5: outcome_score = 3
+            elif norm_pred > 0.3: outcome_score = 2
+            else: outcome_score = 1
+        else:
+            # high prediction = BAD
+            if norm_pred > 1.2: outcome_score = 1
+            elif norm_pred > 0.8: outcome_score = 2
+            elif norm_pred > 0.5: outcome_score = 3
+            elif norm_pred > 0.3: outcome_score = 4
+            else: outcome_score = 5
+    else:
+        # classifiers → rating based only on SHAP stability
+        outcome_score = stability_score
+
+    # 4) Final rating = average
+    final_score = round((0.6 * stability_score + 0.4 * outcome_score), 2)
+
+    # Bound to 1–5
+    final_score = max(1.0, min(final_score, 5.0))
+
+    # 5) Convert to label
+    if final_score >= 4.5: label = "Excellent"
+    elif final_score >= 3.5: label = "Good"
+    elif final_score >= 2.5: label = "Fair"
+    elif final_score >= 1.5: label = "Poor"
+    else: label = "Critical"
+
+    # Top drivers (absolute)
+    sorted_feats = sorted(
+        feats, key=lambda f: abs(float(f.get("shap_value", 0))), reverse=True
+    )
+    top_drivers = sorted_feats[:5]
+
+    return {
+        "score": final_score,
+        "label": label,
+        "drivers": top_drivers,
+        "reason": (
+            f"Based on prediction value, SHAP stability (high-impact={high_impact}), "
+            f"and distribution of feature contributions."
+        )
+    }
+
+# ---------------------------------------------------------
+# HUMAN-READABLE INTERPRETATION OF THE RATING + SHAP DRIVERS
+# ---------------------------------------------------------
+
+def generate_human_readable_analysis(payload: dict) -> str:
+    """
+    Produce a deterministic human-readable explanation of the prediction,
+    based ONLY on:
+      ✅ rating score (1–5)
+      ✅ top SHAP drivers
+      ✅ whether positive outputs are good or bad
+    """
+
+    rating = payload.get("rating", {})
+    score = rating.get("score", 3.0)
+    label = rating.get("label", "Unknown")
+    drivers = rating.get("drivers", [])
+    pred = payload.get("prediction", None)
+    pred_class = payload.get("predicted_class", None)
+
+    # -----------------------------
+    # 1. Interpret rating category
+    # -----------------------------
+    if score >= 4.5:
+        summary = (
+            "The model output is highly favourable. "
+            "The project appears stable with minimal risk signals."
+        )
+    elif score >= 3.5:
+        summary = (
+            "The model output is generally positive. "
+            "There are a few moderate risk indicators, but overall the scenario is acceptable."
+        )
+    elif score >= 2.5:
+        summary = (
+            "The model output indicates a balanced situation. "
+            "Some factors are contributing positively while others are pushing risks upward."
+        )
+    elif score >= 1.5:
+        summary = (
+            "The result suggests elevated risk. "
+            "Multiple high-impact factors are influencing the prediction negatively."
+        )
+    else:
+        summary = (
+            "The model output indicates a highly adverse scenario. "
+            "Several variables strongly drive risk or poor performance."
+        )
+
+    # -----------------------------
+    # 2. Interpret prediction value
+    # -----------------------------
+    if pred is not None:
+        summary += f"\n\n**Predicted Value:** {round(float(pred), 3)}"
+    elif pred_class is not None:
+        summary += f"\n\n**Predicted Category:** {pred_class}"
+
+    # -----------------------------
+    # 3. Explain top drivers
+    # -----------------------------
+    if drivers:
+        summary += "\n\n**Key Factors Influencing This Result:**"
+
+        for d in drivers:
+            fname = d.get("feature")
+            sval = float(d.get("shap_value", 0))
+            inp = d.get("input_value", "N/A")
+
+            if sval > 0:
+                direction = "increases the predicted value / risk"
+            elif sval < 0:
+                direction = "helps reduce the predicted value / risk"
+            else:
+                direction = "has minimal effect"
+
+            summary += f"\n- **{fname}** (input: *{inp}*) → {direction}."
+
+    else:
+        summary += "\n\nNo SHAP drivers were detected, which may indicate missing data or encoder issues."
+
+    # -----------------------------
+    # 4. Final deterministic recommendation
+    # -----------------------------
+    if score >= 4.5:
+        recommendation = (
+            "✅ **Recommendation:** Proceed confidently. The scenario is strongly stable and well-balanced."
+        )
+    elif score >= 3.5:
+        recommendation = (
+            "✅ **Recommendation:** Safe to proceed. Monitor moderate risks but overall scenario is sound."
+        )
+    elif score >= 2.5:
+        recommendation = (
+            "⚠️ **Recommendation:** Mixed outlook. Consider reviewing the top risk drivers and re-testing scenarios."
+        )
+    elif score >= 1.5:
+        recommendation = (
+            "⚠️ **Recommendation:** Exercise caution. Significant risks detected; evaluate mitigations."
+        )
+    else:
+        recommendation = (
+            "❌ **Recommendation:** High-risk scenario. Avoid proceeding without major corrective actions."
+        )
+
+    summary += "\n\n" + recommendation
+
+    return summary
+
 def explain_record(model_path: str,
                    encoders_path: Optional[str] = None,
                    columns_path: Optional[str] = None,
@@ -578,8 +914,113 @@ def explain_record(model_path: str,
     with open(payload_path, "w") as fh:
         json.dump(payload, fh, indent=2)
     logger.info("Saved explanation payload to %s", payload_path)
+    IS_POSITIVE = False
+    if "roi" in model_path.lower():
+        IS_POSITIVE = True
 
+    payload["rating"] = rate_prediction(payload, positive_is_good=IS_POSITIVE)
+    payload["analysis"] = generate_human_readable_analysis(payload)
     return payload
+
+def compare_two_inputs(
+    model_path: str,
+    encoders_path: str = None,
+    columns_path: str = None,
+    input_json_a: str = None,
+    input_json_b: str = None,
+    output_dir: str = "./explanations/comparisons",
+    save_plots: bool = True
+):
+    """
+    Compare SHAP explanations of two different project configurations.
+
+    Returns:
+        {
+            "scenario_A": explanation_payload_A,
+            "scenario_B": explanation_payload_B,
+            "prediction_comparison": {
+                "A": valueA,
+                "B": valueB,
+                "difference": B - A
+            },
+            "shap_comparison": [
+                {
+                    "feature": "...",
+                    "A": shapA,
+                    "B": shapB,
+                    "delta": shapB - shapA
+                },
+                ...
+            ]
+        }
+    """
+
+    import os, json
+    os.makedirs(output_dir, exist_ok=True)
+
+    # --- Run both explanations individually ---
+    explanation_A = explain_record(
+        model_path=model_path,
+        encoders_path=encoders_path,
+        columns_path=columns_path,
+        input_json=input_json_a,
+        output_dir=os.path.join(output_dir, "scenario_A"),
+        save_plots=save_plots
+    )
+
+    explanation_B = explain_record(
+        model_path=model_path,
+        encoders_path=encoders_path,
+        columns_path=columns_path,
+        input_json=input_json_b,
+        output_dir=os.path.join(output_dir, "scenario_B"),
+        save_plots=save_plots
+    )
+
+    # --- Predictions ---
+    pred_A = explanation_A.get("prediction") or explanation_A.get("predicted_class")
+    pred_B = explanation_B.get("prediction") or explanation_B.get("predicted_class")
+
+    # --- Feature-level SHAP comparison ---
+    feature_map_A = {f["feature"]: f for f in explanation_A["features"]}
+    feature_map_B = {f["feature"]: f for f in explanation_B["features"]}
+
+    shap_comparison = []
+    for feat in feature_map_A:
+        if feat not in feature_map_B:
+            continue
+        shapA = feature_map_A[feat]["shap_value"]
+        shapB = feature_map_B[feat]["shap_value"]
+        shap_comparison.append({
+            "feature": feat,
+            "A": shapA,
+            "B": shapB,
+            "delta": shapB - shapA   # positive delta -> increases prediction relative to scenario A
+        })
+
+    # Sort by absolute delta impact
+    shap_comparison = sorted(shap_comparison, key=lambda x: abs(x["delta"]), reverse=True)
+
+    # --- Build final comparison payload ---
+    comparison_payload = {
+        "scenario_A": explanation_A,
+        "scenario_B": explanation_B,
+        "prediction_comparison": {
+            "A": pred_A,
+            "B": pred_B,
+            "difference": (pred_B - pred_A) if isinstance(pred_A, (int, float)) else None
+        },
+        "shap_comparison": shap_comparison
+    }
+
+    # --- Save comparison JSON ---
+    comparison_file = os.path.join(output_dir, "comparison.json")
+    with open(comparison_file, "w") as f:
+        json.dump(comparison_payload, f, indent=2)
+
+    comparison_payload["comparison_file"] = comparison_file
+
+    return comparison_payload
 
 
 # -------------------------

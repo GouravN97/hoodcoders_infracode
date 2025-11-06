@@ -2,10 +2,17 @@ import streamlit as st
 import json
 import os
 import base64
+import traceback
 
 def get_base64_image(image_path):
-    with open(image_path, "rb") as img_file:
-        return base64.b64encode(img_file.read()).decode()
+    """Return base64 string if file exists, else return empty string."""
+    try:
+        if not os.path.exists(image_path):
+            return ""
+        with open(image_path, "rb") as img_file:
+            return base64.b64encode(img_file.read()).decode()
+    except Exception:
+        return ""
 
 def main():
 
@@ -14,8 +21,16 @@ def main():
     # Check if going back - show only animation
     is_going_back = st.session_state.get("going_back", False)
 
-    # Get base64 encoded image
+    # Check if going back - show only animation
+    is_going_back = st.session_state.get("going_back", False)
+
+    # Get base64 encoded image (optional)
     bg_image = get_base64_image("background.png")
+
+    # Build background style separately
+    bg_style = ""
+    if bg_image:
+        bg_style = f"background-image: url('data:image/png;base64,{bg_image}');"
 
     # =============== CSS Styling ===============
     st.markdown(
@@ -23,7 +38,7 @@ def main():
         <style>
         @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700;800&display=swap');
         .stApp {{ 
-            background-image: url("data:image/png;base64,{bg_image}");
+            {bg_style}
             background-size: cover;
             background-position: center;
             background-repeat: no-repeat;
@@ -199,6 +214,170 @@ def main():
         .stJson {{
             display: none !important;
         }}
+        /* Result display styling */
+        .result-field {{
+            color: white !important;
+            font-weight: 800 !important;
+            font-size: 1.3rem !important;
+            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+            display: inline-block;
+            margin-right: 0.5rem;
+        }}
+        .result-value {{
+            color: white !important;
+            font-weight: 700 !important;
+            font-size: 1.3rem !important;
+            display: inline-block;
+        }}
+        .result-block {{
+            margin-top: 0.6rem;
+            margin-bottom: 0.8rem;
+        }}
+        .result-list {{
+            margin: 0.35rem 0 0 0;
+            padding-left: 1.1rem;
+            color: white !important;
+            font-weight: 900 !important;
+            font-size: 1.5rem !important;
+            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+            font-family: 'Verdana', sans-serif !important;
+            margin-bottom: 0.5rem !important;
+        }}
+        /* Help text styling - always visible */
+        .stMarkdown p {{
+            color: rgba(255, 255, 255, 0.85) !important;
+            font-size: 1rem !important;
+            font-weight: 400 !important;
+            font-family: 'Verdana', sans-serif !important;
+            margin-top: 0.3rem !important;
+            margin-bottom: 0.8rem !important;
+        }}
+        /* Input fields - much larger */
+        .stSelectbox > div > div, .stNumberInput > div > div > input {{
+            font-size: 1.2rem !important;
+            padding: 0.75rem !important;
+            font-weight: 600 !important;
+            font-family: 'Verdana', sans-serif !important;
+            color: white !important;
+            background-color: rgba(255, 255, 255, 0.1) !important;
+        }}
+        input, select, textarea {{
+            font-size: 1.2rem !important;
+            padding: 0.75rem !important;
+            font-weight: 600 !important;
+            font-family: 'Verdana', sans-serif !important;
+            color: white !important;
+        }}
+        /* Radio buttons styling - white text visible */
+        .stRadio > label {{
+            color: white !important;
+            font-size: 1.2rem !important;
+            font-weight: 600 !important;
+            font-family: 'Verdana', sans-serif !important;
+        }}
+        .stRadio > div {{
+            gap: 1rem !important;
+        }}
+        .stRadio > div > label {{
+            color: white !important;
+            font-size: 1.1rem !important;
+            font-weight: 600 !important;
+            font-family: 'Verdana', sans-serif !important;
+            background: rgba(255, 255, 255, 0.1) !important;
+            padding: 0.5rem 1rem !important;
+            border-radius: 8px !important;
+            border: 1px solid rgba(255, 255, 255, 0.2) !important;
+            transition: all 0.2s ease !important;
+        }}
+        .stRadio > div > label:hover {{
+            background: rgba(255, 255, 255, 0.2) !important;
+            border-color: rgba(255, 255, 255, 0.4) !important;
+        }}
+        .stRadio > div > label > div {{
+            color: white !important;
+        }}
+        /* Radio button circle */
+        .stRadio input[type="radio"] {{
+            accent-color: #66C8FF !important;
+        }}
+        /* Number input values */
+        .stNumberInput input {{
+            font-size: 1.2rem !important;
+            font-weight: 700 !important;
+            font-family: 'Verdana', sans-serif !important;
+            color: white !important;
+        }}
+        /* Slider text */
+        .stSlider p {{
+            font-size: 1.2rem !important;
+            font-weight: 800 !important;
+            font-family: 'Verdana', sans-serif !important;
+        }}
+        /* Slider styling - black/dark */
+        .stSlider [role="slider"] {{
+            background-color: #333333 !important;
+            border: 2px solid white !important;
+        }}
+        .stSlider [data-baseweb="slider"] > div > div {{
+            background-color: rgba(100, 100, 100, 0.5) !important;
+        }}
+        .stSlider [data-baseweb="slider"] > div > div > div {{
+            background-color: #222222 !important;
+        }}
+        /* Back button styling */
+        .back-btn {{
+            margin-top: 30px;
+            text-align: center;
+        }}
+        .back-btn button {{
+            background: rgba(255, 255, 255, 0.2) !important;
+            color: white !important;
+            border: 2px solid rgba(255, 255, 255, 0.3) !important;
+            border-radius: 10px !important;
+            padding: 10px 30px !important;
+            font-weight: 600 !important;
+            font-size: 1.1rem !important;
+        }}
+        .back-btn button:hover {{
+            background: rgba(255, 255, 255, 0.3) !important;
+            transform: translateY(-2px) !important;
+        }}
+        /* Input section spacing */
+        .input-section {{
+            margin-bottom: 2rem !important;
+        }}
+        /* Section headings */
+        h3 {{
+            font-size: 2rem !important;
+            font-weight: 900 !important;
+        }}
+        /* Hide JSON output */
+        .stJson {{
+            display: none !important;
+        }}
+        /* Animation overlay for back button - zoom out bigger */
+        .back-animation-overlay {{
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background-image: url("data:image/png;base64,{bg_image}");
+            background-size: cover;
+            background-position: center;
+            z-index: 9999;
+            animation: zoomOutRotate 1.5s ease-out forwards;
+        }}
+        @keyframes zoomOutRotate {{
+            0% {{
+                transform: scale(1) rotate(0deg);
+                opacity: 1;
+            }}
+            100% {{
+                transform: scale(3) rotate(-360deg);
+                opacity: 0.7;
+            }}
+        }}
         /* Animation overlay for back button - zoom out bigger */
         .back-animation-overlay {{
             position: fixed;
@@ -227,28 +406,6 @@ def main():
         """,
         unsafe_allow_html=True
     )
-
-    # Show animation overlay when going back and return early
-    if is_going_back:
-        st.markdown(
-            f"""
-            <style>
-            /* Hide everything except animation overlay when going back */
-            .stApp > header,
-            .main .block-container {{
-                display: none !important;
-            }}
-            </style>
-            """,
-            unsafe_allow_html=True
-        )
-        st.markdown('<div class="back-animation-overlay"></div>', unsafe_allow_html=True)
-        import time
-        time.sleep(1.5)
-        st.session_state.page = None
-        st.session_state.going_back = False
-        st.rerun()
-        return
 
     # ===================== MODEL SELECTION =====================
     st.markdown("<h3 style='text-align:center;color:white;font-weight:700;'>Select Prediction Model</h3>", unsafe_allow_html=True)
@@ -391,13 +548,14 @@ def main():
     st.markdown('</div>', unsafe_allow_html=True)
 
     # ===================== BACKEND CALL =====================
-    if submitted:
+    result = None  # ensure defined in outer scope
 
+    if submitted:
         # ---- Build RAW INPUT PAYLOAD ----
         input_payload = {
             "Sector": sector,
             "Region": region,
-            "Owner_Agency": owner_agency if owner_agency else "Unknown",
+            "Owner_Agency": owner_agency[0] if owner_agency else "Unknown",
             "Start_Year": start_year,
             "End_Year": end_year,
             "Planned_Budget": planned_budget,
@@ -412,10 +570,10 @@ def main():
             "Funding_Delay_%": funding_delay
         }
 
-        # JSON output hidden by CSS
+        st.json(input_payload)
 
         # Determine folder name
-        folder = model_map[st.session_state.selected_model]
+        folder = model_map.get(st.session_state.selected_model, "actual_cost_model")
 
         # Auto-build file paths
         model_path = f"models/{folder}/{folder}.json"
@@ -436,19 +594,104 @@ def main():
                 )
                 st.success("✅ Explanation generated successfully!")
             except Exception as e:
-                st.error(f"❌ Error: {e}")
-                raise
+                # Show error to user but DO NOT re-raise (so the UI stays visible)
+                st.error(f"❌ Error running explanation: {e}")
+                st.text(traceback.format_exc())
+                result = None
 
-        # ---- Display results ----
-        st.subheader("🔮 Prediction Result")
-        st.write(result.get("prediction"))
+        # ---- Display results robustly ----
+        if result:
+            st.subheader("🔮 Prediction Result")
 
-        if "plots" in result:
-            if "waterfall" in result["plots"]:
-                st.image(result["plots"]["waterfall"], caption="SHAP Waterfall Plot")
+            # Get prediction value
+            pred_val = result.get("prediction", None)
+            pred_class = result.get("predicted_class", None)
+            display_value = pred_val if pred_val is not None else (pred_class if pred_class is not None else "N/A")
 
-            if "summary" in result["plots"]:
-                st.image(result["plots"]["summary"], caption="SHAP Summary Plot")
+            # Prediction / class display
+            st.markdown(
+                f"""
+                <div class="result-block">
+                  <span class="result-field">Prediction</span>
+                  <span class="result-value">{display_value}</span>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+            # Rating (if available)
+            if "rating" in result:
+                rating = result["rating"]
+                score = rating.get("score", "")
+                label = rating.get("label", "")
+                st.markdown(
+                    f"""
+                    <div class="result-block">
+                      <span class="result-field">Rating</span>
+                      <span class="result-value">{score} — {label}</span>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+
+                # top drivers from rating (if present) — show as bullet list but styled
+                drivers = rating.get("drivers", [])
+                if drivers:
+                    items_html = ""
+                    for d in drivers:
+                        fname = d.get("feature", "unknown")
+                        sval = d.get("shap_value", "")
+                        inp = d.get("input_value", "")
+                        items_html += f"<li>{fname}: shap={sval}, input={inp}</li>"
+                    st.markdown(
+                        f"""
+                        <div class="result-block">
+                          <span class="result-field">Top drivers</span>
+                          <span class="result-value"><ul class="result-list">{items_html}</ul></span>
+                        </div>
+                        """,
+                        unsafe_allow_html=True,
+                    )
+
+            # Analysis (if available)
+            if "analysis" in result:
+                analysis_text = result.get("analysis", "")
+                analysis_html = analysis_text.replace("\n", "<br/>")
+
+                st.markdown(
+                    f"""
+                    <div style="margin-top:0.6rem;">
+                    <span class="result-field">Analysis</span>
+                    </div>
+                    <div style="margin-top:0.25rem; color: rgba(255,255,255,0.95); font-size:1.05rem; font-weight:600;">
+                    {analysis_html}
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+
+            # Show plots if the files exist
+            plots = result.get("plots", {}) if isinstance(result, dict) else {}
+            if plots:
+                # waterfall may be single path or keyed dict; handle both styles
+                wf_path = None
+                if isinstance(plots, dict):
+                    wf_path = plots.get("waterfall") or plots.get("waterfall.png")
+                elif isinstance(plots, str):
+                    wf_path = plots
+
+                if wf_path and os.path.exists(wf_path):
+                    st.image(wf_path, caption="SHAP Waterfall Plot")
+                else:
+                    st.info("Waterfall plot not available.")
+
+                summary_path = plots.get("summary") if isinstance(plots, dict) else None
+                if summary_path and os.path.exists(summary_path):
+                    st.image(summary_path, caption="SHAP Summary Plot")
+                else:
+                    st.info("Summary plot not available.")
+            else:
+                st.info("No plots were returned by the explanation layer.")
 
 
 if __name__ == "__main__":
